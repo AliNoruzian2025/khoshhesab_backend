@@ -60,6 +60,11 @@ class Group extends Model
         return $this->hasMany(ChatMessage::class);
     }
 
+    public function latestMessage()
+    {
+        return $this->hasOne(ChatMessage::class)->latestOfMany();
+    }
+
     public function joinRequests()
     {
         return $this->hasMany(JoinRequest::class);

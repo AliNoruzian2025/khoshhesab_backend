@@ -9,15 +9,19 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\DB;
 use App\Notifications\AppNotification;
 use Illuminate\Support\Facades\Notification;
+use App\Models\PersonalAccount;
+use App\Models\PersonalTransaction;
+use App\Services\PersonalFinanceService;
 
 class SettlementController extends Controller
 {
+    public function __construct(private PersonalFinanceService $finance) {}
     // لیست تسویه‌های یک گروه
     public function index(Group $group)
     {
         $this->authorize('view', $group);
         
-        $settlements = $group->settlements()->with(['debtor', 'creditor'])->orderBy('created_at', 'desc')->get();
+        $settlements = $group->settlements()->with(['debtor', 'creditor', 'debtorPersonalAccount', 'creditorPersonalAccount'])->orderBy('created_at', 'desc')->get();
         
         return response()->json($settlements);
     }
@@ -31,11 +35,17 @@ class SettlementController extends Controller
             'debtor_id' => 'required|exists:users,id',
             'creditor_id' => 'required|exists:users,id',
             'amount' => 'required|integer|min:1',
-            'receipt_image' => 'nullable|string'
+            'receipt_image' => 'nullable|string',
+            'payment_method' => 'required|in:cash,bank_transfer,card_to_card,personal_account,other',
+            'personal_account_id' => 'nullable|integer|exists:personal_accounts,id',
         ]);
         
         if ((int) $request->debtor_id !== (int) $request->user()->id) {
             return response()->json(['message' => 'فقط بدهکار می‌تواند درخواست تسویه خود را ثبت کند'], 403);
+        }
+        if ($request->personal_account_id && ! PersonalAccount::whereKey($request->personal_account_id)
+            ->where('user_id', $request->user()->id)->where('is_archived', false)->exists()) {
+            return response()->json(['message' => 'حساب پرداخت‌کننده معتبر نیست'], 422);
         }
         if ((int) $request->debtor_id === (int) $request->creditor_id) {
             return response()->json(['message' => 'بدهکار و طلبکار نمی‌توانند یک نفر باشند'], 422);
@@ -61,11 +71,13 @@ class SettlementController extends Controller
             'debtor_id' => $request->debtor_id,
             'creditor_id' => $request->creditor_id,
             'amount' => $request->amount,
+            'payment_method' => $request->payment_method,
+            'debtor_personal_account_id' => $request->personal_account_id,
             'receipt_image' => $request->receipt_image,
             'status' => 'pending',
         ]);
 
-        $settlement->load(['debtor', 'creditor']);
+        $settlement->load(['debtor', 'creditor', 'debtorPersonalAccount']);
         Notification::send($group->members, new AppNotification(
             'settlement_created',
             ($settlement->debtor->name ?: 'بدهکار').' درخواست تسویه '.number_format((int) $settlement->amount).' تومان با '.($settlement->creditor->name ?: 'طلبکار').' را ثبت کرد',
@@ -86,11 +98,46 @@ class SettlementController extends Controller
         if ($settlement->status != 'pending') {
             return response()->json(['message' => 'این درخواست قبلاً بررسی شده است'], 422);
         }
-        
-        $settlement->update([
-            'status' => 'approved',
-            'settled_at' => now(),
-        ]);
+
+        $request->validate(['personal_account_id' => 'nullable|integer|exists:personal_accounts,id']);
+        $creditorAccount = $request->personal_account_id
+            ? PersonalAccount::whereKey($request->personal_account_id)->where('user_id', $request->user()->id)->where('is_archived', false)->first()
+            : null;
+        if ($request->personal_account_id && ! $creditorAccount) {
+            return response()->json(['message' => 'حساب مقصد معتبر نیست'], 422);
+        }
+        $debtorAccount = $settlement->debtorPersonalAccount;
+        if ($debtorAccount && $this->finance->balance($debtorAccount) < (int) $settlement->amount) {
+            return response()->json(['message' => 'موجودی حساب انتخاب‌شده بدهکار برای این پرداخت کافی نیست'], 422);
+        }
+
+        DB::transaction(function () use ($settlement, $debtorAccount, $creditorAccount) {
+            $settlement->update([
+                'status' => 'approved',
+                'settled_at' => now(),
+                'creditor_personal_account_id' => $creditorAccount?->id,
+            ]);
+            if ($debtorAccount) {
+                PersonalTransaction::firstOrCreate(
+                    ['user_id' => $settlement->debtor_id, 'reference_type' => 'settlement', 'reference_id' => $settlement->id],
+                    [
+                        'account_id' => $debtorAccount->id, 'type' => 'expense', 'amount' => $settlement->amount,
+                        'category' => 'بدهی پرداخت‌شده', 'title' => 'تسویه '.$settlement->group->name,
+                        'transaction_date' => now()->toDateString(),
+                    ]
+                );
+            }
+            if ($creditorAccount) {
+                PersonalTransaction::firstOrCreate(
+                    ['user_id' => $settlement->creditor_id, 'reference_type' => 'settlement', 'reference_id' => $settlement->id],
+                    [
+                        'account_id' => $creditorAccount->id, 'type' => 'income', 'amount' => $settlement->amount,
+                        'category' => 'طلب دریافت‌شده', 'title' => 'دریافت تسویه '.$settlement->group->name,
+                        'transaction_date' => now()->toDateString(),
+                    ]
+                );
+            }
+        });
 
         Notification::send($settlement->group->members, new AppNotification(
             'settlement_approved',

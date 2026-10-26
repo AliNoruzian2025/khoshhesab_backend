@@ -83,6 +83,46 @@ class GroupApiTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('reminder_date');
     }
 
+    public function test_unchanged_old_reminder_is_allowed_when_only_editing_account_image(): void
+    {
+        $user = User::factory()->create();
+        $group = Group::create([
+            'name' => 'حساب خانه', 'type' => 'account', 'creator_id' => $user->id,
+            'invite_code' => 'OLDREM', 'start_date' => now()->subMonth(),
+            'due_date' => now()->addWeek(), 'reminder_date' => now()->subDay(), 'is_active' => true,
+        ]);
+        $group->members()->attach($user->id, ['joined_at' => now()]);
+        Sanctum::actingAs($user);
+
+        $this->putJson("/api/groups/{$group->id}", [
+            'name' => $group->name,
+            'avatar' => 'storage/groups/new-image.jpg',
+            'due_date' => $group->due_date->toDateString(),
+            'reminder_date' => $group->reminder_date->toDateString(),
+        ])->assertOk()->assertJsonPath('avatar', 'storage/groups/new-image.jpg');
+
+        $this->putJson("/api/groups/{$group->id}", [
+            'due_date' => $group->due_date->toDateString(),
+            'reminder_date' => now()->subDays(2)->toDateString(),
+        ])->assertUnprocessable()->assertJsonValidationErrors('reminder_date');
+    }
+
+    public function test_single_member_account_is_already_settled_with_itself(): void
+    {
+        $user = User::factory()->create();
+        $group = Group::create([
+            'name' => 'حساب شخصی', 'type' => 'account', 'creator_id' => $user->id,
+            'invite_code' => 'ONEUSR', 'start_date' => now()->subMonth(),
+            'due_date' => now()->addDay(), 'is_active' => true,
+        ]);
+        $group->members()->attach($user->id, ['joined_at' => now()]);
+        Sanctum::actingAs($user);
+
+        $this->getJson("/api/groups/{$group->id}")->assertOk()
+            ->assertJsonPath('group.all_members_settled', true)
+            ->assertJsonPath('group.renewal_available', true);
+    }
+
     public function test_member_can_send_a_receipt_only_chat_message(): void
     {
         $user = User::factory()->create(['phone' => '09124444444']);

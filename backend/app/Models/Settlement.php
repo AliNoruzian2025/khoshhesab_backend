@@ -14,6 +14,9 @@ class Settlement extends Model
         'debtor_id',
         'creditor_id',
         'amount',
+        'payment_method',
+        'debtor_personal_account_id',
+        'creditor_personal_account_id',
         'receipt_image',
         'status',
         'rejection_reason',
@@ -40,4 +43,7 @@ class Settlement extends Model
     {
         return $this->belongsTo(User::class, 'creditor_id');
     }
+
+    public function debtorPersonalAccount() { return $this->belongsTo(PersonalAccount::class, 'debtor_personal_account_id'); }
+    public function creditorPersonalAccount() { return $this->belongsTo(PersonalAccount::class, 'creditor_personal_account_id'); }
 }

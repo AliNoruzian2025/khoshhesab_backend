@@ -9,6 +9,10 @@ use App\Http\Controllers\Api\TripController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\UploadController;
+use App\Http\Controllers\Api\PersonalAccountController;
+use App\Http\Controllers\Api\PersonalTransactionController;
+use App\Http\Controllers\Api\SavingsGoalController;
+use App\Http\Controllers\Api\PersonalFinanceDashboardController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/server-time', function () {
@@ -88,4 +92,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
     Route::post('/uploads/receipt', [UploadController::class, 'receipt']);
     Route::post('/uploads/group-image', [UploadController::class, 'groupImage']);
+
+    Route::get('/personal-finance/dashboard', PersonalFinanceDashboardController::class);
+    Route::get('/personal-finance/categories', [PersonalTransactionController::class, 'categories']);
+    Route::apiResource('personal-accounts', PersonalAccountController::class)->except(['show']);
+    Route::apiResource('personal-transactions', PersonalTransactionController::class)->except(['show']);
+    Route::apiResource('savings-goals', SavingsGoalController::class)->except(['show']);
 });

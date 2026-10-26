@@ -61,6 +61,10 @@ class User extends Authenticatable
         return $this->hasMany(ChatMessage::class, 'sender_id');
     }
 
+    public function personalAccounts() { return $this->hasMany(PersonalAccount::class); }
+    public function personalTransactions() { return $this->hasMany(PersonalTransaction::class); }
+    public function savingsGoals() { return $this->hasMany(SavingsGoal::class); }
+
     public function getAuthIdentifierName()
     {
         return 'id';

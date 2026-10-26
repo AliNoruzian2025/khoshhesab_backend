@@ -25,6 +25,7 @@ class GroupController extends Controller
             ->update(['is_active' => false, 'end_date' => now()]);
 
         $groups = $request->user()->groups()
+            ->with('latestMessage.sender')
             ->when(! $request->boolean('include_inactive'), fn ($query) => $query->where('is_active', true))
             ->latest('groups.created_at')
             ->get();
@@ -110,7 +111,7 @@ class GroupController extends Controller
             : false;
         $group->settlement_due = $group->expense_entry_closed;
         $balances = $this->calculateBalances($group);
-        $group->all_members_settled = collect($balances)
+        $group->all_members_settled = $group->members->count() <= 1 || collect($balances)
             ->every(fn (array $balance) => (int) $balance['balance'] === 0);
         $group->renewal_window_open = $group->type === 'account' && $group->due_date
             ? now()->startOfDay()->greaterThanOrEqualTo($group->due_date->copy()->startOfDay()->subDay())
@@ -130,6 +131,10 @@ class GroupController extends Controller
         $effectiveStartDate = $group->start_date?->toDateString() ?: now()->toDateString();
         $minimumDueDate = max($effectiveStartDate, now()->toDateString());
         $effectiveDueDate = $request->input('due_date', $group->due_date?->toDateString());
+        $dueDateUnchanged = $request->has('due_date')
+            && $request->input('due_date') === $group->due_date?->toDateString();
+        $reminderDateUnchanged = $request->has('reminder_date')
+            && $request->input('reminder_date') === $group->reminder_date?->toDateString();
 
         $request->validate([
             'name' => 'sometimes|required|string|max:100',
@@ -137,9 +142,11 @@ class GroupController extends Controller
             'require_approval' => 'sometimes|boolean',
             'start_date' => 'prohibited',
             'due_date' => $group->type === 'account'
-                ? 'sometimes|required|date|after_or_equal:'.$minimumDueDate
+                ? ($dueDateUnchanged ? 'sometimes|required|date' : 'sometimes|required|date|after_or_equal:'.$minimumDueDate)
                 : 'sometimes|nullable|date',
-            'reminder_date' => 'sometimes|nullable|date|after_or_equal:today'.($effectiveDueDate ? '|before:'.$effectiveDueDate : ''),
+            'reminder_date' => 'sometimes|nullable|date'
+                .($reminderDateUnchanged ? '' : '|after_or_equal:today')
+                .($effectiveDueDate ? '|before:'.$effectiveDueDate : ''),
         ], [
             'due_date.after_or_equal' => 'تاریخ سررسید نمی‌تواند قبل از تاریخ شروع حساب باشد.',
             'reminder_date.before' => 'تاریخ یادآوری باید قبل از تاریخ سررسید باشد.',
