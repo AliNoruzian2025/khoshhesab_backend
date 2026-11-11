@@ -6,6 +6,7 @@ use App\Models\ChatMessage;
 use App\Models\Expense;
 use App\Models\Group;
 use App\Models\PersonalAccount;
+use App\Models\PersonalCategory;
 use App\Models\PersonalTransaction;
 use App\Models\SavingsGoal;
 use App\Models\Settlement;
@@ -19,7 +20,7 @@ class DemoPresentationSeeder extends Seeder
 {
     private const PHONES = ['09120000001', '09120000002', '09120000003', '09120000004', '09120000005'];
     private const REAL_PHONES = ['09940342996', '09057633853'];
-    private const INVITES = ['SHM140', 'HOM140', 'BDY140', 'SUB140'];
+    private const INVITES = ['SHM140', 'HOM140', 'BDY140', 'SUB140', 'OFF140', 'DUE140'];
 
     public function run(): void
     {
@@ -52,6 +53,10 @@ class DemoPresentationSeeder extends Seeder
             $home = $this->group('خانه مشترک سعادت‌آباد', 'account', $sara, 'HOM140', $homeMembers, now()->addDays(25), now()->addDays(20));
             $birthday = $this->group('هدیه تولد نیلوفر', 'dang', $reza, 'BDY140', $birthdayMembers);
             $subscriptions = $this->group('اشتراک‌های ماهانه', 'account', $mehdi, 'SUB140', $subscriptionMembers, now()->addDays(12), now()->addDays(9));
+            $inactiveDang = $this->group('پیک‌نیک پایان تابستان', 'dang', $niloufar, 'OFF140', collect([$ali, $niloufar, $mehdi]));
+            $inactiveDang->update(['is_active' => false, 'end_date' => now()->subDays(4)]);
+            $dueAccount = $this->group('هزینه‌های دفتر کار', 'account', $ali, 'DUE140', collect([$ali, $sara, $reza]), now()->subDay(), now()->subDays(3));
+            $dueAccount->update(['is_active' => false]);
 
             $this->expense($north, $ali, 4850000, 'اجاره ویلا دو شب', now()->subDays(8), $everyone);
             $this->expense($north, $sara, 1320000, 'خرید مواد غذایی', now()->subDays(7), $everyone);
@@ -60,6 +65,10 @@ class DemoPresentationSeeder extends Seeder
             $this->expense($home, $ali, 3600000, 'خرید هفتگی خانه', now()->subDays(3), $homeMembers);
             $this->expense($birthday, $mehdi, 4200000, 'خرید هدیه و کیک', now()->subDays(2), $birthdayMembers);
             $this->expense($subscriptions, $niloufar, 780000, 'اشتراک اینترنت و فیلم', now()->subDay(), $subscriptionMembers);
+            $this->expense($inactiveDang, $niloufar, 1650000, 'خرید خوراکی و ورودی مجموعه', now()->subDays(12), collect([$ali, $niloufar, $mehdi]));
+            $this->expense($inactiveDang, $ali, 720000, 'هزینه رفت‌وآمد', now()->subDays(11), collect([$ali, $niloufar, $mehdi]));
+            $this->expense($dueAccount, $ali, 6300000, 'اجاره فضای کار', now()->subDays(15), collect([$ali, $sara, $reza]));
+            $this->expense($dueAccount, $reza, 1140000, 'اینترنت و خدمات دفتر', now()->subDays(9), collect([$ali, $sara, $reza]));
 
             Settlement::create([
                 'group_id' => $north->id, 'debtor_id' => $mehdi->id, 'creditor_id' => $ali->id,
@@ -68,6 +77,15 @@ class DemoPresentationSeeder extends Seeder
             Settlement::create([
                 'group_id' => $home->id, 'debtor_id' => $reza->id, 'creditor_id' => $sara->id,
                 'amount' => 450000, 'payment_method' => 'bank_transfer', 'status' => 'pending',
+            ]);
+            Settlement::create([
+                'group_id' => $north->id, 'debtor_id' => $niloufar->id, 'creditor_id' => $ali->id,
+                'amount' => 280000, 'payment_method' => 'cash', 'status' => 'rejected',
+                'rejection_reason' => 'مبلغ واریزی با درخواست ثبت‌شده مطابقت نداشت',
+            ]);
+            Settlement::create([
+                'group_id' => $inactiveDang->id, 'debtor_id' => $mehdi->id, 'creditor_id' => $niloufar->id,
+                'amount' => 310000, 'payment_method' => 'cash', 'status' => 'approved', 'settled_at' => now()->subDays(5),
             ]);
 
             $this->messages($north, [
@@ -84,8 +102,17 @@ class DemoPresentationSeeder extends Seeder
                 [$ali, 'ممنون، خرید خانه رو هم من ثبت کردم.', 3],
                 [$reza, 'امشب سهم خودم رو تسویه می‌کنم.', 2],
             ]);
+            $this->messages($inactiveDang, [
+                [$niloufar, 'همه هزینه‌ها ثبت شد؛ دنگ را بستم.', 30],
+                [$ali, 'عالی بود، ممنون از هماهنگی.', 28],
+            ]);
+            $this->messages($dueAccount, [
+                [$ali, 'موعد تسویه دفتر رسیده؛ لطفاً مانده‌ها را بررسی کنید.', 12],
+                [$sara, 'امروز درخواست تسویه را ثبت می‌کنم.', 10],
+            ]);
 
             foreach ($users as $index => $user) {
+                $this->seedCategories($user);
                 $main = PersonalAccount::create([
                     'user_id' => $user->id,
                     'name' => $index % 2 === 0 ? 'کارت حقوق' : 'کارت خرید روزانه',
@@ -97,15 +124,28 @@ class DemoPresentationSeeder extends Seeder
                     'user_id' => $user->id, 'name' => 'کیف پول نقدی', 'type' => 'cash',
                     'opening_balance' => 850000 + ($index * 100000), 'note' => 'پول نقد همراه',
                 ]);
+                $archived = PersonalAccount::create([
+                    'user_id' => $user->id, 'name' => 'کارت قدیمی', 'type' => 'card',
+                    'opening_balance' => 2500000, 'note' => 'حساب بسته‌شده برای نمایش سوابق',
+                    'is_archived' => true,
+                ]);
                 $this->transaction($user, $main, 'income', 18500000 + ($index * 900000), 'حقوق مهرماه', 'حقوق', now()->subDays(18));
+                $this->transaction($user, $main, 'income', 1250000 + ($index * 50000), 'فروش وسیله دست دوم', 'فروش', now()->subDays(15));
                 $this->transaction($user, $main, 'expense', 2350000 + ($index * 120000), 'خرید ماهانه', 'خرید', now()->subDays(12));
                 $this->transaction($user, $main, 'expense', 640000 + ($index * 30000), 'قبض‌ها و اینترنت', 'قبوض', now()->subDays(7));
+                $this->transaction($user, $main, 'expense', 890000 + ($index * 25000), 'بیمه تکمیلی', 'بیمه', now()->subDays(6));
                 PersonalTransaction::create([
                     'user_id' => $user->id, 'account_id' => $main->id, 'destination_account_id' => $cash->id,
                     'type' => 'transfer', 'amount' => 1000000, 'title' => 'برداشت برای مخارج نقدی',
                     'transaction_date' => now()->subDays(4)->toDateString(),
                 ]);
                 $this->transaction($user, $cash, 'expense', 185000 + ($index * 10000), 'رفت‌وآمد شهری', 'حمل‌ونقل', now()->subDays(2));
+                $this->transaction($user, $cash, 'expense', 265000 + ($index * 15000), 'کافه با دوستان', 'تفریح', now()->subDay());
+                PersonalTransaction::create([
+                    'user_id' => $user->id, 'account_id' => $archived->id, 'type' => 'expense',
+                    'amount' => 350000, 'title' => 'آخرین خرید کارت قدیمی', 'category' => 'خرید',
+                    'transaction_date' => now()->subMonths(2)->toDateString(),
+                ]);
 
                 SavingsGoal::create([
                     'user_id' => $user->id,
@@ -170,6 +210,20 @@ class DemoPresentationSeeder extends Seeder
         ]);
     }
 
+    private function seedCategories(User $user): void
+    {
+        $categories = [
+            'income' => ['حقوق', 'فروش', 'هدیه', 'سود', 'بازگشت وجه', 'طلب دریافت‌شده', 'سایر'],
+            'expense' => ['خوراک', 'خرید', 'مسکن', 'قبوض', 'حمل‌ونقل', 'درمان', 'آموزش', 'تفریح', 'بیمه', 'بدهی پرداخت‌شده', 'سایر'],
+        ];
+        foreach ($categories as $type => $names) {
+            foreach ($names as $name) {
+                PersonalCategory::create(['user_id' => $user->id, 'type' => $type, 'name' => $name]);
+            }
+        }
+        $user->forceFill(['personal_categories_initialized_at' => now()])->save();
+    }
+
     private function removePreviousDemoData(): void
     {
         Group::whereIn('invite_code', self::INVITES)->get()->each(function (Group $group) {
@@ -185,6 +239,7 @@ class DemoPresentationSeeder extends Seeder
         User::whereIn('phone', self::PHONES)->get()->each(function (User $user) {
             $user->notifications()->delete();
             $user->personalTransactions()->delete();
+            $user->personalCategories()->delete();
             $user->savingsGoals()->delete();
             $user->personalAccounts()->delete();
             $user->tokens()->delete();

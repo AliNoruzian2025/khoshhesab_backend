@@ -57,14 +57,6 @@ class PersonalTransactionController extends Controller
         return response()->json(['message' => 'تراکنش حذف شد و موجودی حساب به‌روزرسانی شد']);
     }
 
-    public function categories()
-    {
-        return response()->json([
-            'income' => ['حقوق', 'فروش', 'هدیه', 'سود', 'بازگشت وجه', 'طلب دریافت‌شده', 'سایر'],
-            'expense' => ['خوراک', 'خرید', 'مسکن', 'قبوض', 'حمل‌ونقل', 'درمان', 'آموزش', 'تفریح', 'بدهی پرداخت‌شده', 'سایر'],
-        ]);
-    }
-
     private function validated(Request $request): array
     {
         $data = $request->validate([

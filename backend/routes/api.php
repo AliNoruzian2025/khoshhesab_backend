@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\PersonalAccountController;
 use App\Http\Controllers\Api\PersonalTransactionController;
 use App\Http\Controllers\Api\SavingsGoalController;
 use App\Http\Controllers\Api\PersonalFinanceDashboardController;
+use App\Http\Controllers\Api\PersonalCategoryController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/server-time', function () {
@@ -94,7 +95,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/uploads/group-image', [UploadController::class, 'groupImage']);
 
     Route::get('/personal-finance/dashboard', PersonalFinanceDashboardController::class);
-    Route::get('/personal-finance/categories', [PersonalTransactionController::class, 'categories']);
+    Route::get('/personal-finance/categories', [PersonalCategoryController::class, 'index']);
+    Route::post('/personal-finance/categories', [PersonalCategoryController::class, 'store']);
+    Route::delete('/personal-finance/categories/{personalCategory}', [PersonalCategoryController::class, 'destroy']);
     Route::apiResource('personal-accounts', PersonalAccountController::class)->except(['show']);
     Route::apiResource('personal-transactions', PersonalTransactionController::class)->except(['show']);
     Route::apiResource('savings-goals', SavingsGoalController::class)->except(['show']);

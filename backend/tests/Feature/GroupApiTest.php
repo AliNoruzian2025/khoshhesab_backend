@@ -476,4 +476,34 @@ class GroupApiTest extends TestCase
             ->assertJsonPath('group.is_active', true)
             ->assertJsonPath('group.parent_group_id', $group->id);
     }
+
+    public function test_expense_payer_is_always_the_authenticated_member(): void
+    {
+        $member = User::factory()->create(['phone' => '09121111561']);
+        $other = User::factory()->create(['phone' => '09121111562']);
+        $group = Group::create([
+            'name' => 'دنگ امن', 'type' => 'dang', 'creator_id' => $member->id,
+            'invite_code' => 'PAYSEC', 'start_date' => now(), 'is_active' => true,
+        ]);
+        $group->members()->attach([$member->id, $other->id]);
+        Sanctum::actingAs($member);
+
+        $this->postJson("/api/groups/{$group->id}/expenses", [
+            'amount' => 200000,
+            'description' => 'خرید گروهی',
+            'expense_date' => today()->toDateString(),
+            // Even a forged legacy value must not change who paid.
+            'payer_id' => $other->id,
+            'splits' => [
+                ['user_id' => $member->id, 'share_amount' => 100000],
+                ['user_id' => $other->id, 'share_amount' => 100000],
+            ],
+        ])->assertCreated()->assertJsonPath('payer_id', $member->id);
+
+        $this->assertDatabaseHas('expenses', [
+            'group_id' => $group->id,
+            'payer_id' => $member->id,
+            'amount' => 200000,
+        ]);
+    }
 }

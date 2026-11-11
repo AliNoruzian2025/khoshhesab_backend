@@ -45,7 +45,6 @@ class ExpenseController extends Controller
             'amount' => 'required|integer|min:1',
             'description' => 'required|string|max:255',
             'expense_date' => 'required|date',
-            'payer_id' => 'required|exists:users,id',
             'splits' => 'required|array|min:1',
             'splits.*.user_id' => 'required|exists:users,id',
             'splits.*.share_amount' => 'required|integer|min:0',
@@ -54,9 +53,11 @@ class ExpenseController extends Controller
         
         $memberIds = $group->members()->pluck('users.id')->map(fn ($id) => (int) $id);
         $splitUserIds = collect($request->splits)->pluck('user_id')->map(fn ($id) => (int) $id);
-        if (! $memberIds->contains((int) $request->payer_id)
-            || $splitUserIds->diff($memberIds)->isNotEmpty()) {
-            return response()->json(['message' => 'پرداخت‌کننده و صاحبان سهم باید عضو گروه باشند'], 422);
+        if (! $memberIds->contains((int) $request->user()->id)) {
+            return response()->json(['message' => 'برای ثبت هزینه باید عضو فعال دنگ یا حساب باشید'], 403);
+        }
+        if ($splitUserIds->diff($memberIds)->isNotEmpty()) {
+            return response()->json(['message' => 'صاحبان سهم باید عضو گروه باشند'], 422);
         }
         if ($splitUserIds->duplicates()->isNotEmpty()) {
             return response()->json(['message' => 'سهم هر عضو فقط یک بار قابل ثبت است'], 422);
@@ -71,7 +72,7 @@ class ExpenseController extends Controller
         $expense = DB::transaction(function () use ($request, $group) {
             $expense = Expense::create([
                 'group_id' => $group->id,
-                'payer_id' => $request->payer_id,
+                'payer_id' => $request->user()->id,
                 'amount' => $request->amount,
                 'description' => $request->description,
                 'receipt_image' => $request->receipt_image,

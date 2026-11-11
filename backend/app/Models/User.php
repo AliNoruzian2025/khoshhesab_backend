@@ -27,6 +27,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'is_completed' => 'boolean',
+        'personal_categories_initialized_at' => 'datetime',
     ];
 
     // روابط
@@ -64,6 +65,7 @@ class User extends Authenticatable
     public function personalAccounts() { return $this->hasMany(PersonalAccount::class); }
     public function personalTransactions() { return $this->hasMany(PersonalTransaction::class); }
     public function savingsGoals() { return $this->hasMany(SavingsGoal::class); }
+    public function personalCategories() { return $this->hasMany(PersonalCategory::class); }
 
     public function getAuthIdentifierName()
     {

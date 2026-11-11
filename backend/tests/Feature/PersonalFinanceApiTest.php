@@ -14,6 +14,30 @@ class PersonalFinanceApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_user_can_add_and_remove_personal_transaction_categories(): void
+    {
+        $user = User::factory()->create();
+        $other = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $categories = $this->getJson('/api/personal-finance/categories')->assertOk()->json();
+        $this->assertNotEmpty($categories['income']);
+        $this->assertNotEmpty($categories['expense']);
+
+        $created = $this->postJson('/api/personal-finance/categories', [
+            'type' => 'expense', 'name' => 'هزینه حیوان خانگی',
+        ])->assertCreated()->json('category');
+        $this->assertSame('هزینه حیوان خانگی', $created['name']);
+
+        Sanctum::actingAs($other);
+        $this->deleteJson('/api/personal-finance/categories/'.$created['id'])->assertForbidden();
+
+        Sanctum::actingAs($user);
+        $this->deleteJson('/api/personal-finance/categories/'.$created['id'])
+            ->assertOk()
+            ->assertJsonMissing(['name' => 'هزینه حیوان خانگی']);
+    }
+
     public function test_account_balances_follow_income_expense_transfer_and_adjustment(): void
     {
         $user = User::factory()->create();
